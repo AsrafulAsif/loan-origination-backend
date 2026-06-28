@@ -13,7 +13,6 @@ class LoanChatMessages extends Model
 
     protected $table = 'loan_chat_messages';
 
-    //protected $hidden = [];
     protected $primaryKey = 'id';
 
     public $timestamps = true;
