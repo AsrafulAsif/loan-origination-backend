@@ -819,12 +819,17 @@ class LoanOriginationService
     private function syncFieldResponses(int $loan_application_id, int $form_template_id, array $data_json): void
     {
         // ── Pre-load lookup maps for this form template ──────────────────────────
-        $fieldIdMap = FormTemplateField::where('form_template_id', $form_template_id)
-            ->pluck('id', 'field_key')
+        // Fields/FieldGroups don't store form_template_id directly — they hang off
+        // Sections via section_id, and Sections holds form_template_id. So we join
+        // through sections to scope the maps to this specific template.
+        $fieldIdMap = Fields::join('sections', 'fields.section_id', '=', 'sections.id')
+            ->where('sections.form_template_id', $form_template_id)
+            ->pluck('fields.id', 'fields.field_key')
             ->all();
 
-        $groupIdMap = FormTemplateFieldGroup::where('form_template_id', $form_template_id)
-            ->pluck('id', 'group_key')   // ['employment_details' => 5, 'references' => 6, ...]
+        $groupIdMap = FieldGroups::join('sections', 'field_groups.section_id', '=', 'sections.id')
+            ->where('sections.form_template_id', $form_template_id)
+            ->pluck('field_groups.id', 'field_groups.group_key')
             ->all();
 
         LoanApplicationFieldResponses::where('loan_application_id', $loan_application_id)
@@ -835,7 +840,6 @@ class LoanOriginationService
 
         foreach ($data_json['sections'] as $section) {
 
-            // ── Flat fields ──────────────────────────────────────────────────────
             foreach ($section['fields'] as $field_key => $value) {
                 LoanApplicationFieldResponses::create([
                     'loan_application_id' => $loan_application_id,
@@ -849,14 +853,13 @@ class LoanOriginationService
                 ]);
             }
 
-            // ── Field groups ─────────────────────────────────────────────────────
             foreach ($section['fieldGroups'] as $group) {
                 $group_key = $group['groupKey'];
 
                 $groupResponse = LoanApplicationGroupResponses::create([
                     'loan_application_id' => $loan_application_id,
                     'group_key' => $group_key,
-                    'group_id' => $groupIdMap[$group_key] ?? null,  // ← resolved
+                    'group_id' => $groupIdMap[$group_key] ?? null,
                     'is_active' => true,
                 ]);
 
