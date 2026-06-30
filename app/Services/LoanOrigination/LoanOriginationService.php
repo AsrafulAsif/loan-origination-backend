@@ -833,12 +833,12 @@ class LoanOriginationService
         // Sections via section_id, and Sections holds form_template_id. So we join
         // through sections to scope the maps to this specific template.
         $fieldIdMap = Fields::join('sections', 'fields.section_id', '=', 'sections.id')
-            ->where('sections.form_template_id', $form_template_id)
+            ->where('sections.template_id', $form_template_id)
             ->pluck('fields.id', 'fields.field_key')
             ->all();
 
         $groupIdMap = FieldGroups::join('sections', 'field_groups.section_id', '=', 'sections.id')
-            ->where('sections.form_template_id', $form_template_id)
+            ->where('sections.template_id', $form_template_id)
             ->pluck('field_groups.id', 'field_groups.group_key')
             ->all();
 

@@ -2,7 +2,6 @@
 
 namespace App\Models\LoanOrigination;
 
-use App\Models\BaseModel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -10,7 +9,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * @property string $current_workflow_stage_id
  */
-class LoanApplication extends BaseModel
+class LoanApplication extends Model
 {
     use SoftDeletes;
 
@@ -31,8 +30,20 @@ class LoanApplication extends BaseModel
         'maker_status',
         'assigned_to',
         'branch_code',
+        'is_active',
         'created_by',
         'updated_by',
         'reverted'
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active'                => 'boolean',
+            'assigned_to'              => 'array',
+            'created_by'               => 'array',
+            'updated_by'               => 'array',
+            'reverted'                 => 'boolean',
+        ];
+    }
 }
