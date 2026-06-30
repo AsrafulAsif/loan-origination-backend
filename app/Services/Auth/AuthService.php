@@ -71,52 +71,9 @@ class AuthService
     }
 
 
-    public function getAllUsers2(array $data): LengthAwarePaginator
+    public function getLoginUser(): ApiUser
     {
-        $page = $data['page'] ?? $this->page;
-        $perPage = $data['per_page'] ?? $this->perPage;
-        $search = isset($data['search']) ? trim((string)$data['search']) : null;
-
-        $paginator = ApiUser::query()
-            ->when($search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('employee_id', 'like', "%{$search}%")
-                        ->orWhere('full_name', 'like', "%{$search}%")
-                        ->orWhere('email_address', 'like', "%{$search}%")
-                        ->orWhere('mobile_no', 'like', "%{$search}%")
-                        ->orWhere('orbit_branch_name', 'like', "%{$search}%")
-                        ->orWhere('desig_name', 'like', "%{$search}%")
-                        ->orWhere('division_name', 'like', "%{$search}%");
-                });
-            })
-            ->paginate(perPage: $perPage, page: $page);
-
-        $employeeIds = collect($paginator->items())->pluck('employee_id')->all();
-
-        $roles = WorkflowStage::join('user_roles', 'workflow_stages.id', '=', 'user_roles.role_id')
-            ->whereIn('user_roles.employee_id', $employeeIds)
-            ->where('user_roles.is_active', true)
-            ->orderBy('workflow_stages.id')
-            ->select('workflow_stages.*', 'user_roles.employee_id')
-            ->get()
-            ->groupBy('employee_id');
-
-        $paginator->getCollection()->transform(function ($user) use ($roles) {
-            $user->roles = $roles->get($user->employee_id, collect())->map(function ($stage) {
-                return [
-                    'id' => $stage->id,
-                    'role_name' => $stage->stage_code,
-                    'role_display_name' => $stage->stage_name,
-                    'role_description' => $stage->stage_description,
-                    'is_active' => $stage->is_active,
-                    'employee_id' => $stage->employee_id,
-                ];
-            });
-
-            return $user;
-        });
-
-        return $paginator;
+        return auth()->user();
     }
 
     public function getUserByEmail(string $email): ApiUser

@@ -10,6 +10,7 @@ use App\Http\Requests\LoanOrigination\LoanSearchRequest;
 use App\Services\LoanOrigination\LoanOriginationService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Throwable;
 
 class LoanOriginationController
@@ -20,6 +21,14 @@ class LoanOriginationController
     public function __construct(LoanOriginationService $loanOriginationService)
     {
         $this->loanOriginationService = $loanOriginationService;
+    }
+
+    public function initLoanOrigination(Request $request) : JsonResponse
+    {
+        $request = $request->validate([
+            'product_type'=>'string',
+        ]);
+        return $this->successResponse($this->loanOriginationService->initLoanOrigination($request['product_type']));
     }
 
 

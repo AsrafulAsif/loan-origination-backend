@@ -7,12 +7,15 @@ use App\Http\Requests\Auth\LoginRequest;
 use App\Services\Auth\AuthService;
 use App\Services\EmailService\EmailService;
 use App\Traits\ApiResponseTrait;
+use App\Traits\UserSnapshotTrait;
+use Illuminate\Foundation\Auth\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AuthController
 {
     use ApiResponseTrait;
+    use UserSnapshotTrait;
 
     protected AuthService $authService;
     public function __construct(AuthService $authService){
@@ -23,6 +26,11 @@ class AuthController
     {
         $users = $this->authService->getAllUsers($request->validated());
         return $this->paginatedResponse($users, 'Users retrieved successfully');
+    }
+
+    public function loginUser(): JsonResponse
+    {
+        return $this->successResponse($this->authService->getLoginUser(), 'User login details.');
     }
 
     public function getAUser(Request $request): JsonResponse

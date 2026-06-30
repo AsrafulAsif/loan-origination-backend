@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('loan')->group(function () {
     Route::middleware(['auth:sanctum',])->group(function () {
+        Route::post('/create/init',[LoanOriginationController::class,'initLoanOrigination']);
         Route::post('/create/draft', [LoanOriginationController::class, 'createLoanDraft']);
         Route::post('/create/submit', [LoanOriginationController::class, 'createLoanSubmit']);
         Route::post('/review', [LoanOriginationController::class, 'loanReview']);

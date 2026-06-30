@@ -2,6 +2,7 @@
 
 namespace App\Services\LoanOrigination;
 
+use App\Enum\AssetProductType;
 use App\Models\Auth\ApiUser;
 use App\Models\LoanOrigination\LoanApplication;
 use App\Models\LoanOrigination\LoanApplicationDetail;
@@ -72,6 +73,15 @@ class LoanOriginationService
         }
 
         return 'UNKNOWN';
+    }
+
+    public function initLoanOrigination(string $productType) : array
+    {
+        $loanOriginationId = $this->createLoanOriginationId($productType);
+
+        return [
+            'loanOriginationId' => $loanOriginationId,
+        ];
     }
 
 
@@ -1657,5 +1667,37 @@ class LoanOriginationService
                     : json_decode($loan->created_by, true),
             ];
         })->filter()->values();
+    }
+
+    public function createLoanOriginationId(string $productType): string
+    {
+        $prefix = $this->resolvePrefix($productType);
+        $datePart = now()->format('Ymd');
+        $randomPart = $this->generateRandomSuffix();
+
+        return "{$prefix}-{$datePart}-{$randomPart}";
+    }
+
+    private function resolvePrefix(string $productType): string
+    {
+        return match ($productType) {
+            AssetProductType::CARD->value   => 'CRD',
+            AssetProductType::SME->value    => 'SME',
+            AssetProductType::RETAIL->value => 'RTL',
+            default => 'LON',
+        };
+    }
+
+    private function generateRandomSuffix(int $length = 6): string
+    {
+        $alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+        $max = strlen($alphabet) - 1;
+
+        $suffix = '';
+        for ($i = 0; $i < $length; $i++) {
+            $suffix .= $alphabet[random_int(0, $max)];
+        }
+
+        return $suffix;
     }
 }
