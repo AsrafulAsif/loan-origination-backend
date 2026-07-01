@@ -14,6 +14,7 @@ Route::prefix('loan')->group(function () {
         Route::post('/loans/assign', [LoanOriginationController::class, 'assignLoan']);
         Route::get('/get-dashboard-loans', [LoanOriginationController::class, 'getDashboardLoans']);
         Route::get("/created-by-me", [LoanOriginationController::class, 'getAllLoansCreatedByMe']);
+        Route::get("/ho-reached", [LoanOriginationController::class, 'getHoReachedLoans']);
         Route::get('/get-loan-by-id/{loan_id}', [LoanOriginationController::class, 'getLoanById']);
         Route::get("/tloans", [LoanOriginationController::class, 'getTPlusOneDayLoans']);
 

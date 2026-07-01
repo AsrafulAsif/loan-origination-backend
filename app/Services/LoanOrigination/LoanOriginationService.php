@@ -18,6 +18,7 @@ use App\Models\Workflow\WorkflowDefinition;
 use App\Models\Workflow\WorkflowStage;
 use App\Traits\UserSnapshotTrait;
 use Carbon\Carbon;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,7 @@ class LoanOriginationService
 
         return [
             'loanOriginationId' => $loanOriginationId,
+            'loan_id' => $loanOriginationId,
         ];
     }
 
@@ -101,7 +103,7 @@ class LoanOriginationService
     /** @throws Throwable */
     private function createLoan(array $data, string $maker_status, ApiUser $user): string
     {
-        $loan_id = $this->getLoanId();
+        $loan_id = $data['loan_id'] ?? $this->getLoanId();
 
         try {
             $product = Product::where('is_active', true)
@@ -140,6 +142,7 @@ class LoanOriginationService
                     'workflow_definition_id' => $workflow_definition->id,
                     'maker_status' => $maker_status,
                     'current_workflow_stage_id' => $next_workflow_stage_id,
+                    'reached_ho' => $this->isHoStage($next_workflow_stage_id),
                     'current_status' => $loan_status,
                     'created_by' => $this->getUserSnapshot(),
                     'branch_code' => $user->orbit_branch_code,
@@ -187,7 +190,11 @@ class LoanOriginationService
             $loan_id = $data['loan_id'] ?? null;
 
             if ($loan_id) {
-                $loan_application = LoanApplication::where('loan_id', $loan_id)->firstOrFail();
+                $loan_application = LoanApplication::where('loan_id', $loan_id)->first();
+
+                if (!$loan_application) {
+                    return $this->createLoan($data, $maker_status, $user);
+                }
 
                 $loan_application_detail = LoanApplicationDetail::where(
                     'loan_application_id', $loan_application->id
@@ -225,6 +232,11 @@ class LoanOriginationService
                 ) {
                     $loan_application->update([
                         'current_workflow_stage_id' => $next_workflow_stage_id,
+                        'reached_ho' => $this->hasReachedHo(
+                            $loan_application,
+                            $current_workflow_stage_id,
+                            $next_workflow_stage_id
+                        ),
                         'maker_status' => $maker_status,
                         'current_status' => $loan_status,
                         'created_by' => $this->getUserSnapshot(),
@@ -453,6 +465,11 @@ class LoanOriginationService
         ) {
             $loan_application->update([
                 'current_workflow_stage_id' => $next_workflow_stage_id,
+                'reached_ho' => $this->hasReachedHo(
+                    $loan_application,
+                    $current_workflow_stage_id,
+                    $next_workflow_stage_id
+                ),
                 'current_status' => $approved_status,
                 'assigned_to' => null,   // ← clear on stage move
                 'updated_by' => $this->getUserSnapshot(),
@@ -560,6 +577,11 @@ class LoanOriginationService
         ) {
             $loan_application->update([
                 'current_workflow_stage_id' => $next_stage_id,
+                'reached_ho' => $this->hasReachedHo(
+                    $loan_application,
+                    $current_stage_id,
+                    $next_stage_id
+                ),
                 'current_status' => $revert_status,
                 'assigned_to' => $assigned_to,
                 'updated_by' => $this->getUserSnapshot(),
@@ -600,6 +622,7 @@ class LoanOriginationService
         ) {
             $loan_application->update([
                 'current_workflow_stage_id' => $current_workflow_stage_id,
+                'reached_ho' => $this->hasReachedHo($loan_application, $current_workflow_stage_id),
                 'current_status' => $reject_status,
                 'maker_status' => 'LOCK',
                 'assigned_to' => null,   // ← clear on stage move
@@ -700,6 +723,7 @@ class LoanOriginationService
             $pickedStatus = $this->buildPickedStatus($loan_application->current_status);
             $assigneeSnapshot = [
                 'employee_id' => $assignee->employee_id,
+                'email_address' => $assignee->email_address,
                 'name' => $assignee->name,
                 'role' => $assignee->role,
                 'branch_code' => $assignee->orbit_branch_code,
@@ -748,6 +772,32 @@ class LoanOriginationService
         return ($index !== false && isset($workflow_definition[$index + 1]))
             ? $workflow_definition[$index + 1]
             : $currentStage;
+    }
+
+    private function hasReachedHo(?LoanApplication $loanApplication, ?int ...$stageIds): bool
+    {
+        if ($loanApplication?->reached_ho) {
+            return true;
+        }
+
+        foreach ($stageIds as $stageId) {
+            if ($this->isHoStage($stageId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isHoStage(?int $stageId): bool
+    {
+        if (!$stageId) {
+            return false;
+        }
+
+        $stageType = WorkflowStage::whereKey($stageId)->value('stage_type');
+
+        return strtoupper((string) $stageType) === 'HO';
     }
 
     /**
@@ -1017,7 +1067,6 @@ class LoanOriginationService
         $user = auth()->user();
         $page = $data['page'] ?? $this->page;
         $perPage = $data['per_page'] ?? $this->perPage;
-        $search = isset($data['search']) ? trim((string)$data['search']) : null;
 
         $isHQ = $user->orbit_branch_code === $this->hqCode;
         $isBranchManager = blank($user->reporting_branch_code)
@@ -1028,42 +1077,11 @@ class LoanOriginationService
         $authorizedStageIds = $this->getAuthorizedStageIds($user->employee_id);
         $hasStageRole = !empty($authorizedStageIds);
 
-        $query = DB::table('loan_applications')
-            ->join('loan_application_details', function ($join) {
-                $join->on('loan_applications.id', '=', 'loan_application_details.loan_application_id')
-                    ->where('loan_application_details.is_active', true);
-            })
-            ->join('products', 'loan_applications.product_id', '=', 'products.id')
-            ->join('workflow_stages', 'loan_applications.current_workflow_stage_id', '=', 'workflow_stages.id')
-            ->select(
-                'loan_applications.id',
-                'loan_applications.loan_id',
-                'loan_applications.product_id',
-                'loan_applications.form_template_id',
-                'loan_applications.workflow_definition_id',
-                'loan_applications.current_workflow_stage_id',
-                'loan_applications.current_status',
-                'loan_applications.assigned_to',
-                'loan_applications.branch_code',
-                'loan_applications.created_by',
-                'loan_applications.updated_by',
-                'loan_applications.maker_status',
-                'loan_applications.created_at',
-                'loan_applications.updated_at',
-                'products.product_name',
-                'products.product_code',
-                'products.product_type',
-                'workflow_stages.stage_code',
-                'workflow_stages.stage_name',
-            )
+        $query = $this->loanListQuery()
             ->whereNull('loan_applications.deleted_at')
-            ->where('loan_applications.maker_status', 'SUBMITTED')
-            ->when($search, function ($q, $search) {
-                $q->where(function ($q) use ($search) {
-                    $q->where('loan_applications.loan_id', 'LIKE', "%{$search}%")
-                        ->orWhere('products.product_name', 'LIKE', "%{$search}%");
-                });
-            });
+            ->where('loan_applications.maker_status', 'SUBMITTED');
+
+        $this->applyLoanListFilters($query, $data);
 
         if ($isHQ) {
             // HQ (RRM, CAD etc.)
@@ -1095,18 +1113,11 @@ class LoanOriginationService
             $query->where('loan_applications.branch_code', $user->orbit_branch_code);
         }
 
-        $paginator = $query
-            ->orderBy('loan_applications.created_at', 'desc')
-            ->paginate(perPage: $perPage, page: $page);
-
-        $paginator->getCollection()->transform(function ($item) {
-            $item->created_by = json_decode($item->created_by);
-            $item->updated_by = json_decode($item->updated_by);
-            $item->assigned_to = json_decode($item->assigned_to);
-            return $item;
-        });
-
-        return $paginator;
+        return $this->paginateLoanList(
+            $query
+                ->orderBy('loan_applications.created_at', 'desc')
+                ->paginate(perPage: $perPage, page: $page)
+        );
     }
 
     public function getAllLoansCreatedByMe(array $data): LengthAwarePaginator
@@ -1114,19 +1125,57 @@ class LoanOriginationService
         $user = auth()->user();
         $page = $data['page'] ?? $this->page;
         $perPage = $data['per_page'] ?? $this->perPage;
-        $search = isset($data['search']) ? trim((string)$data['search']) : null;
 
-        // Loan IDs this user reviewed (acted on in workflow log)
-        $reviewedLoanIds = DB::table('loan_application_workflow_logs')
-            ->whereRaw(
-                "JSON_UNQUOTE(JSON_EXTRACT(action_by, '$.employee_id')) = ?",
-                [$user->employee_id]
-            )
+        // Application rows this user reviewed (acted on in workflow log)
+        $reviewedApplicationIds = DB::table('loan_application_workflow_logs')
+            ->where('action_by->employee_id', $user->employee_id)
             ->pluck('loan_application_id')
             ->unique()
             ->toArray();
 
-        $paginator = DB::table('loan_applications')
+        $query = $this->loanListQuery()
+            ->whereNull('loan_applications.deleted_at')
+            ->where(function ($q) use ($user, $reviewedApplicationIds) {
+
+                // Loans I created
+                $q->where('loan_applications.created_by->employee_id', $user->employee_id);
+
+                // Loans I reviewed
+                if (!empty($reviewedApplicationIds)) {
+                    $q->orWhereIn('loan_applications.id', $reviewedApplicationIds);
+                }
+            });
+
+        $this->applyLoanListFilters($query, $data);
+
+        return $this->paginateLoanList(
+            $query
+                ->orderBy('loan_applications.created_at', 'desc')
+                ->paginate(perPage: $perPage, page: $page)
+        );
+    }
+
+    public function getHoReachedLoans(array $data): LengthAwarePaginator
+    {
+        $page = $data['page'] ?? $this->page;
+        $perPage = $data['per_page'] ?? $this->perPage;
+
+        $query = $this->loanListQuery()
+            ->whereNull('loan_applications.deleted_at')
+            ->where('loan_applications.reached_ho', true);
+
+        $this->applyLoanListFilters($query, $data);
+
+        return $this->paginateLoanList(
+            $query
+                ->orderBy('loan_applications.updated_at', 'desc')
+                ->paginate(perPage: $perPage, page: $page)
+        );
+    }
+
+    private function loanListQuery(): Builder
+    {
+        return DB::table('loan_applications')
             ->join('loan_application_details', function ($join) {
                 $join->on('loan_applications.id', '=', 'loan_application_details.loan_application_id')
                     ->where('loan_application_details.is_active', true);
@@ -1140,6 +1189,7 @@ class LoanOriginationService
                 'loan_applications.form_template_id',
                 'loan_applications.workflow_definition_id',
                 'loan_applications.current_workflow_stage_id',
+                'loan_applications.reached_ho',
                 'loan_applications.current_status',
                 'loan_applications.assigned_to',
                 'loan_applications.branch_code',
@@ -1153,33 +1203,49 @@ class LoanOriginationService
                 'products.product_type',
                 'workflow_stages.stage_code',
                 'workflow_stages.stage_name',
-            )
-            ->whereNull('loan_applications.deleted_at')
-            ->where(function ($q) use ($user, $reviewedLoanIds) {
+                'workflow_stages.stage_type',
+            );
+    }
 
-                // Loans I created
-                $q->whereRaw(
-                    "JSON_UNQUOTE(JSON_EXTRACT(loan_applications.created_by, '$.employee_id')) = ?",
-                    [$user->employee_id]
-                );
+    private function applyLoanListFilters(Builder $query, array $filters): void
+    {
+        $exactFilters = [
+            'loan_id' => 'loan_applications.loan_id',
+            'product_name' => 'products.product_name',
+            'product_code' => 'products.product_code',
+            'branch_code' => 'loan_applications.branch_code',
+        ];
 
-                // Loans I reviewed
-                if (!empty($reviewedLoanIds)) {
-                    $q->orWhereIn('loan_applications.id', $reviewedLoanIds);
-                }
-            })
-            ->when($search, function ($q, $search) {
-                $q->where(function ($q) use ($search) {
-                    $q->where('loan_applications.loan_id', 'LIKE', "%{$search}%")
-                        ->orWhere('products.product_name', 'LIKE', "%{$search}%");
-                });
-            })
-            ->orderBy('loan_applications.created_at', 'desc')
-            ->paginate(perPage: $perPage, page: $page);
+        foreach ($exactFilters as $filterKey => $column) {
+            if (!empty($filters[$filterKey])) {
+                $query->where($column, $filters[$filterKey]);
+            }
+        }
 
+        if (!empty($filters['created_by_email'])) {
+            $query->where('loan_applications.created_by->email_address', $filters['created_by_email']);
+        }
+
+        if (!empty($filters['assigned_to_email'])) {
+            $query->where('loan_applications.assigned_to->email_address', $filters['assigned_to_email']);
+        }
+
+        if (!empty($filters['date_from'])) {
+            $query->whereDate('loan_applications.created_at', '>=', $filters['date_from']);
+        }
+
+        if (!empty($filters['date_to'])) {
+            $query->whereDate('loan_applications.created_at', '<=', $filters['date_to']);
+        }
+    }
+
+    private function paginateLoanList(LengthAwarePaginator $paginator): LengthAwarePaginator
+    {
         $paginator->getCollection()->transform(function ($item) {
             $item->created_by = json_decode($item->created_by);
             $item->updated_by = json_decode($item->updated_by);
+            $item->assigned_to = json_decode($item->assigned_to);
+            $item->reached_ho = (bool) $item->reached_ho;
             return $item;
         });
 

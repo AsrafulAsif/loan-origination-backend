@@ -15,9 +15,10 @@ class FileService
 {
     protected string $disk = 'public';
 
-    public function uploadMultipleFile(array $files): array
+    public function uploadMultipleFile(array $files, string $loanId): array
     {
         $uploaded = [];
+        $loanFolder = $this->sanitizeFolderName($loanId);
 
         foreach ($files as $file) {
             $originalName = $file->getClientOriginalName();
@@ -25,12 +26,14 @@ class FileService
             $storedName   = Str::uuid() . '.' . $extension;
 
             try {
-                $path = $file->storeAs('uploads', $storedName, $this->disk);
+                $path = $file->storeAs("uploads/{$loanFolder}", $storedName, $this->disk);
             } catch (Exception $e) {
                 Log::error($e->getMessage());
+                continue;
             }
 
-           FileManager::create([
+            FileManager::create([
+                'loan_id' => $loanId,
                 'file_name'   => $originalName,
                 'file_path'   => $path,
                 'file_type'   => $file->getMimeType(),
@@ -40,8 +43,10 @@ class FileService
             ]);
 
             $uploaded[] = [
+                'loan_id' => $loanId,
                 'original_name' => $originalName,
                 'filename'      => $storedName,
+                'path'          => $path,
                 'url'           => Storage::disk($this->disk)->url($path),
                 'size'          => $file->getSize(),
                 'mime_type'     => $file->getMimeType(),
@@ -51,9 +56,9 @@ class FileService
         return $uploaded;
     }
 
-    public function deleteFile(string $filename): bool
+    public function deleteFile(string $filename, ?string $loanId = null): bool
     {
-        $path = 'uploads/' . $filename;
+        $path = $this->resolvePath($filename, $loanId);
 
         if (!Storage::disk($this->disk)->exists($path)) {
             return false;
@@ -64,9 +69,9 @@ class FileService
         return Storage::disk($this->disk)->delete($path);
     }
 
-    public function downloadFile(string $filename): Response|ResponseFactory
+    public function downloadFile(string $filename, ?string $loanId = null): Response|ResponseFactory
     {
-        $path = 'uploads/' . $filename;
+        $path = $this->resolvePath($filename, $loanId);
 
         abort_if(
             !Storage::disk($this->disk)->exists($path),
@@ -80,5 +85,21 @@ class FileService
             ->header('Content-Type', $mimeType)
             ->header('Content-Disposition', 'inline; filename="' . $filename . '"')
             ->header('Cache-Control', 'no-cache, must-revalidate');
+    }
+
+    private function resolvePath(string $filename, ?string $loanId = null): string
+    {
+        if ($loanId) {
+            return 'uploads/' . $this->sanitizeFolderName($loanId) . '/' . basename($filename);
+        }
+
+        return 'uploads/' . basename($filename);
+    }
+
+    private function sanitizeFolderName(string $value): string
+    {
+        return Str::of($value)
+            ->replaceMatches('/[^A-Za-z0-9._-]/', '_')
+            ->toString();
     }
 }

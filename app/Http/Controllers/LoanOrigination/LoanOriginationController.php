@@ -95,6 +95,12 @@ class LoanOriginationController
         return $this->paginatedResponse($responseData);
     }
 
+    public function getHoReachedLoans(LoanSearchRequest $request): JsonResponse
+    {
+        $responseData = $this->loanOriginationService->getHoReachedLoans($request->validated());
+        return $this->paginatedResponse($responseData);
+    }
+
     public function getLoanById(string $loan_id): JsonResponse
     {
         $responseData =$this->loanOriginationService->getLoanById($loan_id);

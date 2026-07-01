@@ -31,6 +31,7 @@ class LoanApplication extends Model
         'assigned_to',
         'branch_code',
         'is_active',
+        'reached_ho',
         'created_by',
         'updated_by',
         'reverted'
@@ -40,6 +41,7 @@ class LoanApplication extends Model
     {
         return [
             'is_active'                => 'boolean',
+            'reached_ho'            => 'boolean',
             'assigned_to'              => 'array',
             'created_by'               => 'array',
             'updated_by'               => 'array',
