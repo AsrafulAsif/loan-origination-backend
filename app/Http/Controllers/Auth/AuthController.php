@@ -22,12 +22,6 @@ class AuthController
         $this->authService = $authService;
     }
 
-    public function getAllUsers(GetAllUsersRequest $request): JsonResponse
-    {
-        $users = $this->authService->getAllUsers($request->validated());
-        return $this->paginatedResponse($users, 'Users retrieved successfully');
-    }
-
     public function loginUser(): JsonResponse
     {
         return $this->successResponse($this->authService->getLoginUser(), 'User login details.');
@@ -90,5 +84,13 @@ class AuthController
                 cookie()->forget('refresh_token')
             );
     }
+
+
+    public function getAllUsers(GetAllUsersRequest $request): JsonResponse
+    {
+        $users = $this->authService->getAllUsers($request->validated());
+        return $this->paginatedResponse($users, 'Users retrieved successfully');
+    }
+
 
 }

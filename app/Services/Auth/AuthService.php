@@ -8,6 +8,7 @@ use App\Models\Workflow\WorkflowStage;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -15,6 +16,9 @@ use Illuminate\Support\Facades\Log;
 
 class AuthService
 {
+    private const REFRESH_TOKEN_COOKIE = 'refresh_token';
+    private const REFRESH_TOKEN_DAYS = 30;
+
     protected array $ldapServers;
     protected int $sanctumExpirationMinutes;
 
@@ -122,21 +126,10 @@ class AuthService
 
         abort_if($apiUser['emp_status'] !== 'Active', 401, 'Your account is inactive.');
 
-        $expiresAt = now()->addMinutes($this->sanctumExpirationMinutes);
-
-        $apiUser->tokens()->delete();
-
-        $accessToken = $apiUser->createToken('api-token', ['*'], $expiresAt)->plainTextToken;
-
-        $refreshToken = Str::random(64);
-
-        DB::connection('mysql')
-            ->table('refresh_tokens')
-            ->insert([
-                'api_user_id' => $apiUser->employee_id,
-                'token' => hash('sha256', $refreshToken),
-                'expires_at' => now()->addDays(30),
-            ]);
+        $tokenPair = DB::connection('mysql')->transaction(function () use ($apiUser) {
+            $apiUser->tokens()->delete();
+            return $this->issueTokenPair($apiUser);
+        });
 
         $permissions = DB::connection('mysql')
             ->table('user_roles as ur')
@@ -152,13 +145,13 @@ class AuthService
         return [
             'data' => [
                 'apiUser' => $apiUser,
-                'access_token' => $accessToken,
+                'access_token' => $tokenPair['access_token'],
                 'token_type' => 'Bearer',
-                'expires_in' => $expiresAt->diffInSeconds(now()),
-                'expires_at' => $expiresAt->toIso8601String(),
+                'expires_in' => $tokenPair['expires_in'],
+                'expires_at' => $tokenPair['expires_at'],
                 'permissions' => $permissions,
             ],
-            'refresh_token' => $refreshToken,
+            'refresh_token' => $tokenPair['refresh_token'],
         ];
     }
 
@@ -191,57 +184,77 @@ class AuthService
 
     public function refresh(Request $request): array
     {
-        $refreshToken = $request->cookie('refresh_token');
+        $refreshToken = $request->cookie(self::REFRESH_TOKEN_COOKIE)
+            ?? $request->input('refresh_token')
+            ?? $request->bearerToken();
 
         abort_if($refreshToken === null, 401, "Refresh token missing.");
 
-        $tokenRow = DB::connection('mysql')
-            ->table('refresh_tokens')
-            ->where('token', hash('sha256', $refreshToken))
-            ->where('expires_at', '>', now())
-            ->first();
+        return DB::connection('mysql')->transaction(function () use ($refreshToken) {
+            $tokenHash = $this->hashRefreshToken($refreshToken);
 
-        abort_if(!$tokenRow, 400, 'Refresh token is invalid.');
+            $tokenRow = DB::connection('mysql')
+                ->table('refresh_tokens')
+                ->where('token', $tokenHash)
+                ->lockForUpdate()
+                ->first();
 
-        $apiUser = ApiUser::on('mysql_second')->find($tokenRow->api_user_id);
+            abort_if(
+                !$tokenRow || Carbon::parse($tokenRow->expires_at)->isPast(),
+                400,
+                'Refresh token is invalid.'
+            );
 
-        abort_if(!$apiUser, 400, 'User not found.');
+            $apiUser = ApiUser::query()->find($tokenRow->api_user_id);
 
-        DB::connection('mysql')
-            ->table('refresh_tokens')
-            ->where('api_user_id', $apiUser->employee_id)
-            ->delete();
+            abort_if(!$apiUser, 400, 'User not found.');
 
-        $apiUser->tokens()->delete();
+            abort_if($apiUser['emp_status'] !== 'Active', 401, 'Your account is inactive.');
 
+            DB::connection('mysql')
+                ->table('refresh_tokens')
+                ->where('id', $tokenRow->id)
+                ->delete();
+
+            $apiUser->tokens()->delete();
+
+            $tokenPair = $this->issueTokenPair($apiUser);
+
+            return [
+                'data' => [
+                    'apiUser' => $apiUser,
+                    'access_token' => $tokenPair['access_token'],
+                    'token_type' => 'Bearer',
+                    'expires_in' => $tokenPair['expires_in'],
+                    'expires_at' => $tokenPair['expires_at'],
+                ],
+                'refresh_token' => $tokenPair['refresh_token'],
+            ];
+        });
+    }
+
+    private function issueTokenPair(ApiUser $apiUser): array
+    {
         $expiresAt = now()->addMinutes($this->sanctumExpirationMinutes);
-
-
-        $accessToken = $apiUser->createToken(
-            'api-token',
-            ['*'],
-            $expiresAt
-        )->plainTextToken;
-
-        $newRefreshToken = Str::random(64);
-
+        $refreshToken = Str::random(64);
 
         DB::connection('mysql')->table('refresh_tokens')->insert([
             'api_user_id' => $apiUser->employee_id,
-            'token' => hash('sha256', $newRefreshToken),
-            'expires_at' => now()->addDays(30),
+            'token' => $this->hashRefreshToken($refreshToken),
+            'expires_at' => now()->addDays(self::REFRESH_TOKEN_DAYS),
         ]);
 
         return [
-            'data' => [
-                'apiUser' => $apiUser,
-                'access_token' => $accessToken,
-                'token_type' => 'Bearer',
-                'expires_in' => $expiresAt->diffInSeconds(now()),
-                'expires_at' => $expiresAt->toIso8601String(),
-            ],
-            'refresh_token' => $newRefreshToken,
+            'access_token' => $apiUser->createToken('api-token', ['*'], $expiresAt)->plainTextToken,
+            'refresh_token' => $refreshToken,
+            'expires_in' => now()->diffInSeconds($expiresAt),
+            'expires_at' => $expiresAt->toIso8601String(),
         ];
+    }
+
+    private function hashRefreshToken(string $token): string
+    {
+        return hash('sha256', $token);
     }
 
     public function logout(): void

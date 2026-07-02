@@ -27,10 +27,10 @@ class FileManager extends Model
     protected function casts(): array
     {
         return [
-            'loan_id' => 'string',
-            'file_size' => 'string',
-            'uploaded_by' => 'array',
-            'uploaded_at' => 'datetime',
+            'loan_id'       => 'string',
+            'file_size'     => 'string',
+            'uploaded_by'   => 'array',
+            'uploaded_at'   => 'datetime',
         ];
     }
 }

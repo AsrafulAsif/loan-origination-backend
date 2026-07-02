@@ -7,6 +7,7 @@ use App\Http\Requests\LoanOrigination\LoanCreateRequest;
 use App\Http\Requests\LoanOrigination\LoanPickRequest;
 use App\Http\Requests\LoanOrigination\LoanReviewRequest;
 use App\Http\Requests\LoanOrigination\LoanSearchRequest;
+use App\Http\Requests\LoanOrigination\StageUserSearchRequest;
 use App\Services\LoanOrigination\LoanOriginationService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
@@ -80,6 +81,12 @@ class LoanOriginationController
     {
         $this->loanOriginationService->assignLoan($request->validated());
         return $this->successResponse(null, 'Loan assigned successfully');
+    }
+
+    public function getCurrentStageUsers(string $loan_id, StageUserSearchRequest $request): JsonResponse
+    {
+        $responseData = $this->loanOriginationService->getCurrentStageUsers($loan_id, $request->validated());
+        return $this->paginatedResponse($responseData, 'Current stage users retrieved successfully');
     }
 
 
