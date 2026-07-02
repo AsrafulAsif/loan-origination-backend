@@ -222,7 +222,7 @@ class ExternalApiService
             });
         }
 
-        $perPage = min((int) $request->integer('per_page', 15), 100);
+        $perPage = min((int) $request->integer('per_page', 20), 100);
 
         return $query->orderByDesc('created_at')->paginate($perPage);
     }
