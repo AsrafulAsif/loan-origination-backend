@@ -3,6 +3,7 @@
 namespace App\Services\File;
 
 use App\Models\File\FileManager;
+use App\Traits\UserSnapshotTrait;
 use Exception;
 use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Http\Response;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 
 class FileService
 {
+    use UserSnapshotTrait;
     protected string $disk = 'public';
 
     public function uploadMultipleFile(array $files, string $loanId): array
@@ -33,11 +35,11 @@ class FileService
             }
 
             FileManager::create([
-                'loan_id' => $loanId,
+                'loan_id'     => $loanId,
                 'file_name'   => $originalName,
                 'file_path'   => $path,
                 'file_type'   => $file->getMimeType(),
-                'uploaded_by' => Auth::id(),
+                'uploaded_by' => $this->getUserSnapshot(),
                 'uploaded_at' => now(),
                 'file_size'   => $file->getSize(),
             ]);

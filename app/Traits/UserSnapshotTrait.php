@@ -10,11 +10,11 @@ trait UserSnapshotTrait
     {
         $user = auth()->user();
         return [
-            'employee_id' => $user->employee_id,
-            'email_address' => $user->email_address,
-            'full_name' => $user->full_name,
-            'mobile_no' => $user->mobile_no,
-            'branch_code' => $user->orbit_branch_code,
+            'employee_id'       => $user->employee_id,
+            'email_address'     => $user->email_address,
+            'full_name'         => $user->full_name,
+            'mobile_no'         => $user->mobile_no,
+            'branch_code'       => $user->orbit_branch_code,
             'desig_name_long'   => $user->desig_name_long,
             "function_name"     => $user->function_name,
         ];

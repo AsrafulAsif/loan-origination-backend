@@ -14,7 +14,7 @@ class ExternalApiController
         protected ExternalApiService $externalApiService
     ) {}
 
-    public function getExternalApiData(string $apiCode, Request $request) : JsonResponse
+    public function callExternalApiData(string $apiCode, Request $request) : JsonResponse
     {
         return $this->successResponse($this->externalApiService->getExternalApiData($apiCode, $request));
     }
