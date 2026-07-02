@@ -41,6 +41,7 @@ class PlaceholderReplacer
         return $result === null ? '' : (string) $result;
     }
 
+    //second bracket from template
     private function replaceInString(string $template, array|object $rootObject): mixed
     {
         if (preg_match(self::EXACT_PLACEHOLDER_PATTERN, $template, $matches)) {
