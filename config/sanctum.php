@@ -51,7 +51,7 @@ return [
     */
 
     'expiration' => null,
-    'sanctum_expiration_minutes' => env('SANCTUM_EXPIRATION_MINUTES', 1440),
+    'sanctum_expiration_minutes' => env('SANCTUM_EXPIRATION_MINUTES', 5),
 
     /*
     |--------------------------------------------------------------------------

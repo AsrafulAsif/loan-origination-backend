@@ -10,6 +10,7 @@ use App\Models\LoanOrigination\LoanApplicationFieldResponses;
 use App\Models\LoanOrigination\LoanApplicationGroupResponseInstances;
 use App\Models\LoanOrigination\LoanApplicationGroupResponses;
 use App\Models\LoanOrigination\LoanApplicationWorkflowLog;
+use App\Models\Privilege\Role;
 use App\Models\Product\Product;
 use App\Models\Template\FieldGroups;
 use App\Models\Template\Fields;
@@ -36,9 +37,9 @@ class LoanOriginationService
 
     public function __construct()
     {
-        $this->page = config('app.default_page');
-        $this->perPage = config('app.default_per_page');
-        $this->hqCode = config('app.hq_code');
+        $this->page     = config('app.default_page');
+        $this->perPage  = config('app.default_per_page');
+        $this->hqCode   = config('app.hq_code');
     }
 
 
@@ -85,6 +86,7 @@ class LoanOriginationService
             'loan_id' => $loanOriginationId,
         ];
     }
+
 
 
     /** @throws Throwable */
@@ -279,75 +281,6 @@ class LoanOriginationService
         }
     }
 
-    /** @throws Throwable */
-    public function reviewLoanOld(array $data): void
-    {
-        try {
-            $user = auth()->user();
-            $action = strtoupper($data['action'] ?? '');
-
-            if (!in_array($action, ['APPROVE', 'REVERT', 'REJECT'])) {
-                abort(422, 'Invalid action. Must be APPROVE, REVERT or REJECT.');
-            }
-
-            $loan_application = LoanApplication::where('loan_id', $data['loan_id'])->firstOrFail();
-
-            $workflow_definition_array = WorkflowDefinition::where('is_active', true)
-                ->where('id', $loan_application->workflow_definition_id)
-                ->firstOrFail()
-                ->workflow_definition;
-
-            $current_workflow_stage_id = $loan_application->current_workflow_stage_id;
-            $maker_stage_id = $workflow_definition_array[0];
-
-
-            $authorizedStageIds = $this->getAuthorizedStageIds($user->employee_id);
-
-            if (!in_array($current_workflow_stage_id, $authorizedStageIds)) {
-                abort(403, 'You are not authorized to review this stage.');
-            }
-
-            // ── Pick guard ────────────────────────────────────────────────────────
-            $assignedTo = is_array($loan_application->assigned_to)
-                ? $loan_application->assigned_to
-                : json_decode($loan_application->assigned_to, true);
-
-            if (!empty($assignedTo)) {
-                if (($assignedTo['employee_id'] ?? null) !== $user->employee_id) {
-                    abort(403, 'This loan has been picked by someone else. Only the assigned reviewer can act on it.');
-                }
-            }
-
-            $defaultRemarks = [
-                'APPROVE' => 'Approved',
-                'REVERT' => 'Sent back for correction',
-                'REJECT' => 'Rejected',
-            ];
-
-            $remarks = !empty(trim($data['remarks'] ?? ''))
-                ? trim($data['remarks'])
-                : $defaultRemarks[$action];
-
-            match ($action) {
-                'APPROVE' => $this->handleApprove(
-                    $loan_application,
-                    $workflow_definition_array,
-                    $current_workflow_stage_id,
-                    $remarks
-                ),
-                'REVERT' => $this->handleRevert($data),
-                'REJECT' => $this->handleReject(
-                    $loan_application,
-                    $current_workflow_stage_id,
-                    $remarks
-                ),
-            };
-
-        } catch (Throwable $e) {
-            Log::error($e->getMessage());
-            throw $e;
-        }
-    }
 
 
     public function reviewLoan(array $data): void
@@ -393,7 +326,7 @@ class LoanOriginationService
                     abort(403, 'You are not authorized to review loans from this branch.');
                 }
             }
-            // ─────────────────────────────────────────────────────────────────────
+
 
             // ── Pick guard ────────────────────────────────────────────────────────
             $assignedTo = is_array($loan_application->assigned_to)
@@ -408,9 +341,9 @@ class LoanOriginationService
             // ─────────────────────────────────────────────────────────────────────
 
             $defaultRemarks = [
-                'APPROVE' => 'Approved',
-                'REVERT' => 'Sent back for correction',
-                'REJECT' => 'Rejected',
+                'APPROVE'  => 'Approved',
+                'REVERT'   => 'Sent back for correction',
+                'REJECT'   => 'Rejected',
             ];
 
             $remarks = !empty(trim($data['remarks'] ?? ''))
@@ -486,67 +419,6 @@ class LoanOriginationService
         });
     }
 
-
-    /**
-     * @throws Throwable
-     */
-//    private function handleRevert(array $data): void
-//    {
-//        $loan_application = LoanApplication::where('loan_id', $data['loan_id'])->firstOrFail();
-//
-//        $send_back_config = $data['send_back_configuration'];
-//        $current_stage_id = $send_back_config['current_stage_id'];
-//        $next_stage_id = $send_back_config['next_stage_id'];
-//        $assigned_to = $data['assigned_to'] ?? null;
-//
-//        $revert_status = $this->computeLoanStatus(
-//            action: 'REVERT',
-//            actingStageId: $current_stage_id,
-//            nextStageId: $next_stage_id,
-//        );
-//
-//        $current_workflow_stage_id = $loan_application->current_workflow_stage_id;
-//        $maker_stage_id = $loan_application->maker_stage_id;
-//        $remarks = $data['remarks'] ?? '';
-//
-//        DB::transaction(function () use (
-//            $loan_application,
-//            $current_workflow_stage_id,
-//            $maker_stage_id,
-//            $revert_status,
-//            $remarks,
-//            $next_stage_id,
-//            $assigned_to,
-//            $send_back_config,
-//            $data
-//        ) {
-//            // Update loan application
-//            $loan_application->update([
-//                'current_workflow_stage_id' => $send_back_config['next_stage_id'],
-//                'current_status' => $revert_status,
-//                'assigned_to' => $assigned_to,
-//                'updated_by' => $this->getUserSnapshot(),
-//            ]);
-//
-////            // Selectively deactivate & recreate only the fields listed in send_back_configuration
-////            if (!empty($send_back_config['sections'])) {
-////                $this->syncRevertResponses(
-////                    loan_application_id: $loan_application->id,
-////                    sections: $send_back_config['sections'],
-////                );
-////            }
-//
-//            // Stage history log
-//            $this->addLoanApplicationLogStageHistory(
-//                loan_application_id: $loan_application->id,
-//                form_stage: $send_back_config['current_stage_id'],
-//                to_stage: $send_back_config['next_stage_id'],
-//                stage_status: $revert_status,
-//                remarks: $remarks,
-//                action_type: 'REVERT',
-//            );
-//        });
-//    }
 
 
     private function handleRevert(array $data): void
@@ -722,11 +594,11 @@ class LoanOriginationService
 
             $pickedStatus = $this->buildPickedStatus($loan_application->current_status);
             $assigneeSnapshot = [
-                'employee_id' => $assignee->employee_id,
+                'employee_id'   => $assignee->employee_id,
                 'email_address' => $assignee->email_address,
-                'name' => $assignee->name,
-                'role' => $assignee->role,
-                'branch_code' => $assignee->orbit_branch_code,
+                'name'          => $assignee->name,
+                'role'          => $assignee->role,
+                'branch_code'   => $assignee->orbit_branch_code,
             ];
 
             $remarks = !empty(trim($data['remarks'] ?? ''))
@@ -756,6 +628,113 @@ class LoanOriginationService
             Log::error($e->getMessage());
             throw $e;
         }
+    }
+
+    public function getCurrentStageUsers(string $loanId, array $filters): LengthAwarePaginator
+    {
+        $page = $filters['page'] ?? $this->page;
+        $perPage = $filters['per_page'] ?? $this->perPage;
+        $search = isset($filters['search']) ? trim((string)$filters['search']) : null;
+
+        $loanApplication = LoanApplication::where('loan_id', $loanId)->firstOrFail();
+        $currentStageId = (int)$loanApplication->current_workflow_stage_id;
+
+        $stage = WorkflowStage::query()
+            ->select(['id', 'stage_code', 'stage_name', 'stage_type'])
+            ->findOrFail($currentStageId);
+
+        $roleIds = DB::connection('mysql')
+            ->table('role_stages')
+            ->where('stage_id', $currentStageId)
+            ->where('is_active', true)
+            ->pluck('role_id')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        if (empty($roleIds)) {
+            return new LengthAwarePaginator([], 0, $perPage, $page);
+        }
+
+        $employeeIds = DB::connection('mysql')
+            ->table('user_roles')
+            ->whereIn('role_id', $roleIds)
+            ->where('is_active', true)
+            ->pluck('employee_id')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        if (empty($employeeIds)) {
+            return new LengthAwarePaginator([], 0, $perPage, $page);
+        }
+
+        $paginator = ApiUser::query()
+            ->select([
+                'employee_id',
+                'full_name',
+                'email_address',
+                'mobile_no',
+                'orbit_branch_code',
+                'orbit_branch_name',
+                'desig_name',
+                'division_name',
+                'emp_status',
+            ])
+            ->whereIn('employee_id', $employeeIds)
+            ->where('emp_status', 'Active')
+            ->when($search, function ($query, string $search) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('employee_id', 'like', "%{$search}%")
+                        ->orWhere('full_name', 'like', "%{$search}%")
+                        ->orWhere('email_address', 'like', "%{$search}%")
+                        ->orWhere('mobile_no', 'like', "%{$search}%")
+                        ->orWhere('desig_name', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('full_name')
+            ->paginate(perPage: $perPage, page: $page);
+
+        $pageEmployeeIds = collect($paginator->items())->pluck('employee_id')->all();
+
+        $roles = Role::query()
+            ->join('user_roles', 'roles.id', '=', 'user_roles.role_id')
+            ->whereIn('user_roles.employee_id', $pageEmployeeIds)
+            ->whereIn('user_roles.role_id', $roleIds)
+            ->where('user_roles.is_active', true)
+            ->where('roles.is_active', true)
+            ->orderBy('roles.id')
+            ->select([
+                'roles.id',
+                'roles.role_name',
+                'roles.role_display_name',
+                'user_roles.employee_id',
+            ])
+            ->get()
+            ->groupBy('employee_id');
+
+        $paginator->getCollection()->transform(function ($user) use ($roles, $stage) {
+            return [
+                'employee_id' => $user->employee_id,
+                'full_name' => $user->full_name,
+                'email_address' => $user->email_address,
+                'mobile_no' => $user->mobile_no,
+                'branch_code' => $user->orbit_branch_code,
+                'branch_name' => $user->orbit_branch_name,
+                'designation' => $user->desig_name,
+                'division' => $user->division_name,
+                'emp_status' => $user->emp_status,
+                'current_stage' => [
+                    'id' => $stage->id,
+                    'stage_code' => $stage->stage_code,
+                    'stage_name' => $stage->stage_name,
+                    'stage_type' => $stage->stage_type,
+                ],
+                'roles' => $roles->get($user->employee_id, collect())->values(),
+            ];
+        });
+
+        return $paginator;
     }
 
 

@@ -12,6 +12,7 @@ Route::prefix('loan')->group(function () {
         Route::post('/review', [LoanOriginationController::class, 'loanReview']);
         Route::post('/loans/pick',   [LoanOriginationController::class, 'pickLoan']);
         Route::post('/loans/assign', [LoanOriginationController::class, 'assignLoan']);
+        Route::get('/loans/{loan_id}/stage-users', [LoanOriginationController::class, 'getCurrentStageUsers']);
         Route::get('/get-dashboard-loans', [LoanOriginationController::class, 'getDashboardLoans']);
         Route::get("/created-by-me", [LoanOriginationController::class, 'getAllLoansCreatedByMe']);
         Route::get("/ho-reached", [LoanOriginationController::class, 'getHoReachedLoans']);
