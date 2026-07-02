@@ -582,7 +582,7 @@ class LoanOriginationService
 
             // Resolve assignee
             $assignee = ApiUser::where('employee_id', $data['employee_id'])
-                ->where('is_active', true)
+                ->where('emp_status', 'Active')
                 ->firstOrFail();
 
             // Assignee must also be authorized at this stage via their roles
@@ -593,25 +593,18 @@ class LoanOriginationService
             }
 
             $pickedStatus = $this->buildPickedStatus($loan_application->current_status);
-            $assigneeSnapshot = [
-                'employee_id'   => $assignee->employee_id,
-                'email_address' => $assignee->email_address,
-                'name'          => $assignee->name,
-                'role'          => $assignee->role,
-                'branch_code'   => $assignee->orbit_branch_code,
-            ];
 
             $remarks = !empty(trim($data['remarks'] ?? ''))
                 ? trim($data['remarks'])
                 : "Assigned to {$assignee->name} by {$user->name}";
 
             DB::transaction(function () use (
-                $loan_application, $assigneeSnapshot, $pickedStatus, $remarks
+                $loan_application, $assignee, $pickedStatus, $remarks
             ) {
                 $loan_application->update([
-                    'assigned_to' => $assigneeSnapshot,
-                    'current_status' => $pickedStatus,
-                    'updated_by' => $this->getUserSnapshot(),
+                    'assigned_to'     => $this->getUserSnapshotFromObj($assignee),
+                    'current_status'  => $pickedStatus,
+                    'updated_by'      => $this->getUserSnapshot(),
                 ]);
 
                 $this->addLoanApplicationLogStageHistory(
