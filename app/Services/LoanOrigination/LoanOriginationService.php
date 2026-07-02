@@ -24,6 +24,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Random\RandomException;
 use Throwable;
 
 class LoanOriginationService
@@ -816,6 +817,10 @@ class LoanOriginationService
         $base = str_ends_with($current_status, '_PICKED')
             ? substr($current_status, 0, -7)   // strip "_PICKED"
             : $current_status;
+
+        $base = str_ends_with($base, '_PENDING')
+            ? substr($base, 0, -8)
+            : $base;
 
         return $base . '_PICKED';
     }
@@ -1707,6 +1712,9 @@ class LoanOriginationService
         })->filter()->values();
     }
 
+    /**
+     * @throws RandomException
+     */
     public function createLoanOriginationId(string $productType): string
     {
         $prefix = $this->resolvePrefix($productType);
@@ -1726,6 +1734,9 @@ class LoanOriginationService
         };
     }
 
+    /**
+     * @throws RandomException
+     */
     private function generateRandomSuffix(int $length = 6): string
     {
         $alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';

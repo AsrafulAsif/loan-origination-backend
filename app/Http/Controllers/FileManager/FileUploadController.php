@@ -31,14 +31,6 @@ class FileUploadController
         return $this->successResponse($uploaded,'Files uploaded successfully');
     }
 
-    public function deleteFile(string $filename)
-    {
-        $deleted = $this->fileService->deleteFile($filename);
-
-        abort_if(!$deleted, 404, 'File not found');
-
-        return $this->successResponse(null,'File deleted successfully');
-    }
 
     public function deleteLoanFile(string $loanId, string $filename)
     {
@@ -46,25 +38,7 @@ class FileUploadController
 
         abort_if(!$deleted, 404, 'File not found');
 
-        return $this->successResponse(null,'File deleted successfully');
-    }
-
-    public function serveFile(string $filename)
-    {
-        $file = $this->fileService->serveFile($filename);
-
-        return response()->stream(function () use ($file) {
-            fpassthru($file['file_stream']);
-
-            if (is_resource($file['file_stream'])) {
-                fclose($file['file_stream']);
-            }
-        }, 200, [
-            'Content-Type'         => $file['mime_type'],
-            'Content-Disposition'  => 'inline; filename="' . $file['file_name'] . '"',
-            'Cache-Control'        => 'no-cache, must-revalidate',
-            'Content-Length'       => $file['file_size'],
-        ]);
+        return $this->successResponse(['is_deleted' => true], 'File deleted successfully');
     }
 
     public function serveLoanFile(string $loanId, string $filename)
