@@ -5,9 +5,6 @@ namespace App\Services\File;
 use App\Models\File\FileManager;
 use App\Traits\UserSnapshotTrait;
 use Exception;
-use Illuminate\Contracts\Routing\ResponseFactory;
-use Illuminate\Http\Response;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
@@ -71,7 +68,7 @@ class FileService
         return Storage::disk($this->disk)->delete($path);
     }
 
-    public function downloadFile(string $filename, ?string $loanId = null): Response|ResponseFactory
+    public function serveFile(string $filename, ?string $loanId = null): array
     {
         $path = $this->resolvePath($filename, $loanId);
 
@@ -81,12 +78,16 @@ class FileService
             'File not found'
         );
 
-        $mimeType    = Storage::disk($this->disk)->mimeType($path);
-        $fileContent = Storage::disk($this->disk)->get($path);
-        return response($fileContent, 200)
-            ->header('Content-Type', $mimeType)
-            ->header('Content-Disposition', 'inline; filename="' . $filename . '"')
-            ->header('Cache-Control', 'no-cache, must-revalidate');
+        $stream = Storage::disk($this->disk)->readStream($path);
+
+        abort_if($stream === false, 500, 'Unable to read file');
+
+        return [
+            'file_stream' => $stream,
+            'mime_type' => Storage::disk($this->disk)->mimeType($path) ?? 'application/octet-stream',
+            'file_name' => basename($filename),
+            'file_size' => Storage::disk($this->disk)->size($path),
+        ];
     }
 
     private function resolvePath(string $filename, ?string $loanId = null): string
