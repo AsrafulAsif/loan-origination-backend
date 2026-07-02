@@ -13,7 +13,7 @@ Route::prefix('external-api')->group(function () {
     Route::patch('/{apiCode}', [ExternalApiController::class, 'update']);
 
     // Execute configured external API
-    Route::post('/{apiCode}', [ExternalApiController::class, 'callExternalApiData']);
+    Route::get('/{apiCode}', [ExternalApiController::class, 'callExternalApiData']);
 
     Route::get('/get-all', [ExternalApiController::class, 'getAll']);
 });

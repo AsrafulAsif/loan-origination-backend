@@ -20,6 +20,10 @@ class PlaceholderReplacer
     public function replaceInTemplate(mixed $template, array|object $rootObject): mixed
     {
         if (is_array($template)) {
+            if ($this->isMapTemplate($template)) {
+                return $this->replaceMapTemplate($template, $rootObject);
+            }
+
             return array_map(fn ($value) => $this->replaceInTemplate($value, $rootObject), $template);
         }
 
@@ -28,6 +32,33 @@ class PlaceholderReplacer
         }
 
         return $template;
+    }
+
+    private function isMapTemplate(array $template): bool
+    {
+        return array_key_exists('$map', $template)
+            && array_key_exists('template', $template);
+    }
+
+    private function replaceMapTemplate(array $template, array|object $rootObject): array
+    {
+        $source = $this->resolvePath((string) $template['$map'], $rootObject);
+
+        if (!is_array($source)) {
+            return [];
+        }
+
+        $itemName = (string) ($template['as'] ?? 'item');
+
+        return array_map(function ($item) use ($template, $rootObject, $itemName) {
+            $scope = is_array($rootObject)
+                ? $rootObject
+                : get_object_vars($rootObject);
+
+            $scope[$itemName] = $item;
+
+            return $this->replaceInTemplate($template['template'], $scope);
+        }, $source);
     }
 
     /**
