@@ -43,4 +43,9 @@ class ExternalApiController
 
         return $this->successResponse($externalApi);
     }
+
+    public function getAll(Request $request): JsonResponse
+    {
+        return $this->successResponse($this->externalApiService->listExternalApis($request));
+    }
 }

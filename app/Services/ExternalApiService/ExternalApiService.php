@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
 
 class ExternalApiService
 {
@@ -198,5 +200,30 @@ class ExternalApiService
         }
 
         return $response->json() ?? [];
+    }
+
+
+    /**
+     * List external API definitions, with optional filtering and pagination.
+     */
+    public function listExternalApis(Request $request): LengthAwarePaginator
+    {
+        $query = ExternalApi::query();
+
+        if ($request->filled('is_active')) {
+            $query->where('is_active', $request->boolean('is_active'));
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->string('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('api_name', 'like', "%{$search}%")
+                    ->orWhere('api_code', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = min((int) $request->integer('per_page', 15), 100);
+
+        return $query->orderByDesc('created_at')->paginate($perPage);
     }
 }

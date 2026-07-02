@@ -19,7 +19,12 @@ class ExternalApiRequest extends FormRequest
                 'api_method' => strtoupper($this->input('api_method')),
             ]);
         }
+
+        $this->merge([
+            'is_active' => $this->input('is_active', true),
+        ]);
     }
+
 
     public function rules(): array
     {
@@ -58,7 +63,8 @@ class ExternalApiRequest extends FormRequest
             'headers_template' => ['nullable', 'string'],
             'created_by' => ['nullable', 'array'],
             'updated_by' => ['nullable', 'array'],
-            'is_active' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean' ],
         ];
     }
+
 }
